@@ -5,6 +5,17 @@ import torch
 import numpy as np
 import vmf
 import spaces_utils as sut
+import torch.distributions as dist
+
+
+class DSpace(ABC):
+    """Base class."""
+
+    @property
+    @abstractmethod
+    def dim(self):
+        pass
+
 
 
 class Space(ABC):
@@ -349,3 +360,23 @@ class NBoxSpace(Space):
         )
 
         return values.view((size, self.n))
+
+class DiscreteSpace(DSpace):
+    """Discrete Probability space"""
+
+    def __init__(self, n, probs_):
+        self.n = n
+        assert sum(probs_) - 1.0 < 1e-7
+        self.probs_ = torch.Tensor(probs_)
+        self.distrib = self.initialize_distribution()
+
+    @property
+    def dim(self):
+        return self.n
+
+    def initialize_distribution(self):
+        distrib = dist.Categorical(probs=self.probs_)
+        return distrib
+
+    def sample_from_distribution(self, size, device="cpu"):
+        return (self.distrib.sample(torch.Size([size, 1])))

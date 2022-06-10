@@ -7,6 +7,8 @@ import latent_spaces
 import argparse
 import spaces_utils
 
+def return_uniform_probs(n_opt):
+    return [1./n_opt for i in range(n_opt)]
 
 def main():
     parser = argparse.ArgumentParser()
@@ -76,6 +78,40 @@ def main():
 
     raw_latents = s.sample_marginal(args.n_points, device="cpu").numpy()
 
+    if True: # TODO Flag Position is shared
+        s_position = latent_spaces.ProductLatentSpace(
+            [
+                latent_spaces.LatentSpace(
+                    spaces.DiscreteSpace(1, probs_=return_uniform_probs(3)),
+                    lambda space, size, device: space.sample_from_distribution(size, device=device),
+                    None,
+                ),  # Position x
+                latent_spaces.LatentSpace(
+                    spaces.DiscreteSpace(1, probs_=return_uniform_probs(3)),
+                    lambda space, size, device: space.sample_from_distribution(size, device=device),
+                    None,
+                ),  # Position y
+                latent_spaces.LatentSpace(
+                    spaces.DiscreteSpace(1, probs_=return_uniform_probs(3)),
+                    lambda space, size, device: space.sample_from_distribution(size, device=device),
+                    None,
+                ),  # Position z
+            ]
+        )
+        raw_latents_position = s_position.sample_marginal(args.n_points, device="cpu").numpy()
+        position_latents_new = raw_latents_position[:, :]
+        position_latents_new = (position_latents_new - 1) * 1.5
+
+    if True: # TODO Flag Hue Color is shared
+        s_hueobject = latent_spaces.LatentSpace(
+            spaces.DiscreteSpace(1, probs_=return_uniform_probs(6)),
+            lambda space, size, device: space.sample_from_distribution(size, device=device),
+            None,
+        )
+        hue_object_latents_new = s_hueobject.sample_marginal(args.n_points, device="cpu").numpy()
+        hue_object_latents_new = (hue_object_latents_new * 2 + 1) * np.pi / 6
+
+
     if args.position_only or args.rotation_and_color_only:
         assert args.n_objects == 1, "Only one object is supported for fixed variables"
 
@@ -138,7 +174,8 @@ def main():
         ) / 2.0
         position_latents *= 3
 
-    latents = np.concatenate((position_latents, rotation_and_color_latents), 1)
+    rotation_and_color_latents[:,-3:-2] = hue_object_latents_new
+    latents = np.concatenate((position_latents_new, rotation_and_color_latents), 1)
 
     reordered_transposed_latents = []
     for n in range(args.n_objects):

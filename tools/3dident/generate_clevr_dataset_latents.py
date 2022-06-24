@@ -1,20 +1,56 @@
 """Create latents for 3DIdent dataset."""
-
 import os
 import numpy as np
+import sys 
+sys.path.append("/cluster/work/vogtlab/Group/palumboe/cl-ica_mm")
 import spaces
 import latent_spaces
 import argparse
 import spaces_utils
+import shutil
 
 def return_uniform_probs(n_opt):
     return [1./n_opt for i in range(n_opt)]
+
+def text_rendura(latents, prompt):
+    return prompt.format(**{"COL": latents[0], "POSY": latents[1], "POSX": latents[2], "OBJ": 'teapot'})
+
+map_colorclasses = {0: 'red',
+                    1: 'yellow',
+                    2: 'green',
+                    3: 'cyan',
+                    4: 'blue',
+                    5: 'magenta'}
+
+map_positions_y = {2: 'right',
+                   1: 'center',
+                   0: 'left'}
+
+map_positions_x = {2: 'bottom',
+                   1: 'mid',
+                   0: 'top'}
+
+#map_classes = {0: 'teapot',
+#               1: 'hare',
+#               2: 'dragon',
+#               3: 'cow',
+#               4: 'armadillo',
+#               5: 'horse',
+#               6: 'head'}
+
+n_color_classes = len(map_colorclasses.keys())
+n_positions_x = len(map_positions_x.keys())
+n_positions_y = len(map_positions_y.keys())
+#n_classes = len(map_classes.keys())
+
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--n-points", default=1000000, type=int)
     parser.add_argument("--n-objects", default=1, type=int)
     parser.add_argument("--output-folder", required=True, type=str)
+    parser.add_argument("--n-batches", default=2, type=int)
+    parser.add_argument("--batch_index", default=1, type=int)
     parser.add_argument("--position-only", action="store_true")
     parser.add_argument("--rotation-and-color-only", action="store_true")
     parser.add_argument("--rotation-only", action="store_true")
@@ -76,6 +112,25 @@ def main():
             ]
         )
 
+    
+    # Hand-engineered propmpts
+
+    text_prompts =  {0: "An {OBJ} of {COL} color is visible, positioned in the {POSY}-{POSX} of the image." ,
+                    1: "A {COL} {OBJ} is on the {POSY}-{POSX} of the image.",
+                    2: "The {POSY}-{POSX} of the image represents a {COL} colored {OBJ}.",
+                    3: "On the {POSY}-{POSX} of the picture there is a {OBJ} in {COL} color.",
+                    4: "On the {POSY}-{POSX} of the image, there is a {COL} object, in the form of a {OBJ}." }
+    n_text_prompts = len(text_prompts.keys())
+
+    s_t = latent_spaces.LatentSpace(
+                spaces.DiscreteSpace(1, probs_=return_uniform_probs(n_text_prompts)),
+                lambda space, size, device: space.sample_from_distribution(size, device=device),
+                None,
+            )
+
+    prompts = s_t.sample_marginal(args.n_points, device="cpu").numpy()
+    prompts_actval = np.vectorize(text_prompts.get)(prompts)
+
     raw_latents = s.sample_marginal(args.n_points, device="cpu").numpy()
 
     if True: # TODO Flag Position is shared
@@ -91,14 +146,34 @@ def main():
                     lambda space, size, device: space.sample_from_distribution(size, device=device),
                     None,
                 ),  # Position y
-                latent_spaces.LatentSpace(
-                    spaces.DiscreteSpace(1, probs_=return_uniform_probs(3)),
-                    lambda space, size, device: space.sample_from_distribution(size, device=device),
-                    None,
-                ),  # Position z
+                #latent_spaces.LatentSpace(
+                #    spaces.DiscreteSpace(1, probs_=return_uniform_probs(3)),
+                #    lambda space, size, device: space.sample_from_distribution(size, device=device),
+                #    None,
+                #),  # Position z
             ]
         )
         raw_latents_position = s_position.sample_marginal(args.n_points, device="cpu").numpy()
+        raw_latents_position[0,0] = 0
+        raw_latents_position[1,0] = 1
+        raw_latents_position[2,0] = 2
+        raw_latents_position[3,0] = 0
+        raw_latents_position[4,0] = 1
+        raw_latents_position[5,0] = 2
+        raw_latents_position[6,0] = 0
+        raw_latents_position[7,0] = 1
+        raw_latents_position[8,0] = 2
+        raw_latents_position[0,1] = 0
+        raw_latents_position[1,1] = 0
+        raw_latents_position[2,1] = 0
+        raw_latents_position[3,1] = 1
+        raw_latents_position[4,1] = 1
+        raw_latents_position[5,1] = 1
+        raw_latents_position[6,1] = 2
+        raw_latents_position[7,1] = 2
+        raw_latents_position[8,1] = 2
+        positions_x_actval = np.vectorize(map_positions_x.get)(raw_latents_position[:, 0])
+        positions_y_actval = np.vectorize(map_positions_y.get)(raw_latents_position[:, 1])
         position_latents_new = raw_latents_position[:, :]
         position_latents_new = (position_latents_new - 1) * 1.5
 
@@ -109,6 +184,7 @@ def main():
             None,
         )
         hue_object_latents_new = s_hueobject.sample_marginal(args.n_points, device="cpu").numpy()
+        color_variables_actval = np.vectorize(map_colorclasses.get)(hue_object_latents_new[:,0])
         hue_object_latents_new = (hue_object_latents_new * 2 + 1) * np.pi / 6
 
 
@@ -144,6 +220,8 @@ def main():
 
         position_latents = raw_latents[:, :n_non_angular_variables]
         position_latents *= 3
+        position_latents_old_z = position_latents[:,-2:-1]
+
 
     else:
         if args.position_only:
@@ -172,10 +250,41 @@ def main():
         position_latents[:, 2:n_non_angular_variables:3] = (
             position_latents[:, 2:n_non_angular_variables:3] + 1
         ) / 2.0
-        position_latents *= 3
+        position_latents *= 0
+        position_latents_old_z = position_latents[:,-2:-1]
 
+    rotation_and_color_latents[:,:] =rotation_and_color_latents[:,-3:-2]*0
     rotation_and_color_latents[:,-3:-2] = hue_object_latents_new
-    latents = np.concatenate((position_latents_new, rotation_and_color_latents), 1)
+    latents = np.concatenate((position_latents_new*2, position_latents_old_z, rotation_and_color_latents), 1)
+
+    n_samples = len(latents)
+    #indices = np.array_split(np.arange(n_samples), args.n_batches)[args.batch_index]
+    output_tex_folder = os.path.join(args.output_folder, "text")
+    if os.path.exists(output_tex_folder):
+        shutil.rmtree(output_tex_folder)
+        os.makedirs(
+            output_tex_folder
+        )
+    else:
+        os.makedirs(
+            output_tex_folder
+        )
+    for idx in range(n_samples):
+        print(latents[idx])
+        print(color_variables_actval[idx], positions_x_actval[idx], positions_y_actval[idx])
+        output_filename = os.path.join(
+            output_tex_folder,
+            f"{str(idx).zfill(int(np.ceil(np.log10(n_samples))))}.txt",
+        )
+        if os.path.exists(output_filename):
+            print("Skipped file", output_filename)
+            continue
+        else:
+            with open(output_filename, 'w+') as f:
+                prompt = prompts_actval[idx][0]
+                tuple_for_prompt = (color_variables_actval[idx], positions_x_actval[idx], positions_y_actval[idx] )
+                f.write(text_rendura(tuple_for_prompt, prompt))
+
 
     reordered_transposed_latents = []
     for n in range(args.n_objects):

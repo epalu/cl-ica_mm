@@ -49,6 +49,7 @@ def main(args):
             continue
 
         current_latents = latents[idx]
+        print(current_latents)
         render_sample(
             current_latents,
             args.material_names,
@@ -258,8 +259,9 @@ def update_objects_and_lights(latents, material_names, update_lights):
         object.location = (
             object_latents[0],
             object_latents[1],
-            object_latents[2] + max_object_size / 2,
+            object_latents[2],
         )
+        print('obj loc', object.location)
         object.rotation_euler = tuple(object_latents[3:6])
 
         # update object color
@@ -319,6 +321,7 @@ if __name__ == "__main__":
         INSIDE_BLENDER = False
     if INSIDE_BLENDER:
         try:
+            sys.path.append("/cluster/work/vogtlab/Group/palumboe/cl-ica_mm/tools/3dident")
             import render_utils
         except ImportError as e:
             try:

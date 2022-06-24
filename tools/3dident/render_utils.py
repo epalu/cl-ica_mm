@@ -104,6 +104,7 @@ def add_object(
 
     # Set the new object as active, then rotate, scale, and translate it
     x, y, z = loc
+    print('obj loc', x,y,z)
     bpy.context.view_layer.objects.active = bpy.data.objects[new_name]
     bpy.data.objects[new_name].select_set(True)
     bpy.context.object.rotation_euler[0] = alpha
